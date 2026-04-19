@@ -1,0 +1,4 @@
+*.exe
+*.db
+temp_*
+.vscode/
