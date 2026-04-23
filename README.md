@@ -1,31 +1,19 @@
 # LogStore Engine
-A high-performance, thread-safe **Key-Value Storage Engine** built in C++ based on the **Bitcask (LSM-tree style) architecture**. It is optimized for high-throughput write operations and ensures data persistence with built-in integrity checks.
+A high-performance Key-Value Storage Engine built in C++ following the Bitcask architecture. It is designed for low-latency writes and thread-safe data persistence.
 
-## What It Does
-Unlike traditional databases that perform expensive "in-place" updates, **LogStore** uses an **Append-Only Log** structure. Every operation is sequentially written to the end of the file, which significantly reduces disk head movement and maximizes write speeds.
-
-### Key Features
-* **Append-Only Storage:** Achieves **$O(1)$ write throughput** by treating the database as a sequential log.
-* **In-Memory Indexing:** Maintains a sorted index using `std::map` to facilitate **Range Queries** and point lookups in **$O(\log N)$** time.
-* **Data Integrity:** Implements a **Checksum validation** system (ASCII-sum) for every record to detect and handle partial writes or file corruption.
-* **Log Compaction:** Includes a "Garbage Collection" mechanism to reclaim disk space by removing stale records and tombstones.
-* **Concurrency Control:** Engineered with `std::mutex` and `lock_guard` patterns to support safe, concurrent access in multi-threaded environments.
-
-## Performance Analysis
-| Operation | Time Complexity | Note |
-| :--- | :--- | :--- |
-| **SET (Write)** | $O(1)$ | Sequential disk append |
-| **GET (Read)** | $O(\log N)$ | Index lookup + 1 Disk Seek |
-| **Range Scan** | $O(K + \log N)$ | Where $K$ is the number of elements |
+## Core Features
+* **Append-Only Log:** Ensures $O(1)$ write performance by sequentially appending records to the end of the file.
+* **In-Memory Index:** Maintains a sorted `std::map` of keys and their file offsets, allowing $O(\log N)$ point lookups and range queries.
+* **Thread Safety:** Uses `std::mutex` and `lock_guard` for safe concurrent operations in multi-threaded environments.
+* **Data Integrity:** Implements checksum validation to detect file corruption and ensure reliable crash recovery.
+* **Log Compaction:** Includes a background-style garbage collection process to reclaim disk space by removing stale data.
 
 ## Tech Stack
-* **Language:** C++ (Standard: C++11 or higher)
+* **Language:** C++ (C++11 or higher)
 * **Architecture:** Bitcask / Log-Structured Storage
-* **Namespace:** `LogEngine`
 * **Core Libraries:** `std::mutex`, `std::fstream`, `std::map`
 
 ## How to Run
-1. Ensure you have a C++ compiler (GCC/G++) with POSIX threads enabled.
-2. Compile the source code:
+1. Compile the code with thread support:
    ```bash
    g++ -std=c++11 main.cpp -o LogStore -pthread
