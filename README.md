@@ -8,7 +8,7 @@ Unlike traditional databases that perform expensive "in-place" updates, **LogSto
 * **Append-Only Storage:** Achieves **$O(1)$ write throughput** by treating the database as a sequential log.
 * **In-Memory Indexing:** Maintains a sorted index using `std::map` to facilitate **Range Queries** and point lookups in **$O(\log N)$** time.
 * **Data Integrity:** Implements a **Checksum validation** system (ASCII-sum) for every record to detect and handle partial writes or file corruption.
-* **Log Compaction:** Includes an automated "Garbage Collection" mechanism to reclaim disk space by removing stale records and tombstones.
+* **Log Compaction:** Includes a "Garbage Collection" mechanism to reclaim disk space by removing stale records and tombstones.
 * **Concurrency Control:** Engineered with `std::mutex` and `lock_guard` patterns to support safe, concurrent access in multi-threaded environments.
 
 ## Performance Analysis
@@ -21,8 +21,8 @@ Unlike traditional databases that perform expensive "in-place" updates, **LogSto
 ## Tech Stack
 * **Language:** C++ (Standard: C++11 or higher)
 * **Architecture:** Bitcask / Log-Structured Storage
+* **Namespace:** `LogEngine`
 * **Core Libraries:** `std::mutex`, `std::fstream`, `std::map`
-* **Environment:** MinGW-w64 (POSIX Thread Model)
 
 ## How to Run
 1. Ensure you have a C++ compiler (GCC/G++) with POSIX threads enabled.
