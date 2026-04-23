@@ -1,11 +1,11 @@
-#include<iostream>
-#include<fstream>
-#include<string>
-#include<map>
-#include<vector>
-#include<cstdio>
-#include<mutex>
-#include<limits> 
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <map>
+#include <vector>
+#include <cstdio>
+#include <mutex>
+#include <limits> 
 using namespace std;
 
 class LogStore {
@@ -17,10 +17,10 @@ private:
 
     unsigned int calculateChecksum(string k, string v) {
         unsigned int sum = 0;
-        for (char c : k) {
+        for(char c : k) {
             sum += (unsigned char)c;
         }
-        for (char c : v) {
+        for(char c : v) {
             sum += (unsigned char)c;
         }
         return sum;
@@ -62,13 +62,13 @@ private:
         cout << "Loading database index, please wait..." << endl;
         file.seekg(0, ios::beg);
         int count = 0;
-        while (file.peek() != EOF) {
+        while(file.peek() != EOF) {
             long long pos = file.tellg();
             char status;
             unsigned int savedChecksum;
             int kLen, vLen;
 
-            if (!file.read(&status, 1)) break;
+            if(!file.read(&status, 1)) break;
             file.read((char*)&savedChecksum, sizeof(savedChecksum));
             file.read((char*)&kLen, sizeof(kLen));
             
@@ -79,9 +79,9 @@ private:
             string value(vLen, ' ');
             file.read(&value[0], vLen);
 
-            if (calculateChecksum(key, value) != savedChecksum) break;
+            if(calculateChecksum(key, value) != savedChecksum) break;
 
-            if (status == 1) {
+            if(status == 1) {
                 index[key] = pos;
             } else {
                 index.erase(key);
@@ -96,7 +96,7 @@ public:
     LogStore(string name) {
         filename = name;
         file.open(filename, ios::in | ios::out | ios::binary | ios::app);
-        if (!file.is_open()) {
+        if(!file.is_open()) {
             ofstream create(filename, ios::binary);
             create.close();
             file.open(filename, ios::in | ios::out | ios::binary | ios::app);
@@ -105,7 +105,7 @@ public:
     }
 
     ~LogStore() {
-        if (file.is_open()) {
+        if(file.is_open()) {
             file.close();
         }
     }
@@ -120,7 +120,7 @@ public:
 
     string get(string k) {
         lock_guard<mutex> lock(mtx);
-        if (index.find(k) == index.end()) {
+        if(index.find(k) == index.end()) {
             return "NOT_FOUND";
         }
         return getValueAtOffset(index[k]);
@@ -132,7 +132,7 @@ public:
         auto itStart = index.lower_bound(start);
         auto itEnd = index.upper_bound(end);
 
-        for (auto it = itStart; it != itEnd; ++it) {
+        for(auto it = itStart; it != itEnd; ++it) {
             results.push_back({it->first, getValueAtOffset(it->second)});
         }
         return results;
@@ -140,7 +140,7 @@ public:
 
     void remove(string k) {
         lock_guard<mutex> lock(mtx);
-        if (index.find(k) == index.end()) {
+        if(index.find(k) == index.end()) {
             return;
         }
         file.seekp(0, ios::end);
@@ -154,7 +154,7 @@ public:
         ofstream tempFile(tempName, ios::binary);
         map<string, long long> newIndex;
 
-        for (auto const& entry : index) {
+        for(auto const& entry : index) {
             string val = getValueAtOffset(entry.second);
             long long newPos = tempFile.tellp();
             
@@ -185,9 +185,9 @@ public:
 int main() {
     LogStore db("engine.db");
     int choice;
-    string k, v, s, e;
+    string key, value, startKey, endKey;
 
-    while (true) {
+    while(true) {
         cout << "\n===============================" << endl;
         cout << "   LogStore Engine Interface" << endl;
         cout << "===============================" << endl;
@@ -200,7 +200,7 @@ int main() {
         cout << "-------------------------------" << endl;
         cout << "Selection: ";
         
-        if (!(cin >> choice)) {
+        if(!(cin >> choice)) {
             cin.clear();
             cin.ignore(numeric_limits<streamsize>::max(), '\n');
             cout << "Invalid input. Numbers only please." << endl;
@@ -209,59 +209,63 @@ int main() {
         
         cin.ignore(numeric_limits<streamsize>::max(), '\n');
 
-        switch (choice) {
-            case 1:
+        switch(choice) {
+            case 1: {
                 cout << "Key: "; 
-                getline(cin, k);
+                getline(cin, key);
                 cout << "Value: "; 
-                getline(cin, v);
-                db.set(k, v);
+                getline(cin, value);
+                db.set(key, value);
                 cout << "Success." << endl;
                 break;
+            }
 
-            case 2:
+            case 2: {
                 cout << "Search Key: "; 
-                getline(cin, k);
-                cout << "Result: " << db.get(k) << endl;
+                getline(cin, key);
+                cout << "Result: " << db.get(key) << endl;
                 break;
+            }
 
-            case 3:
+            case 3: {
                 cout << "Start Key: "; 
-                getline(cin, s);
+                getline(cin, startKey);
                 cout << "End Key: "; 
-                getline(cin, e);
-                {
-                    auto res = db.getRange(s, e);
-                    cout << "\n--- Scanned Entries ---" << endl;
-                    if (res.empty()) {
-                        cout << "No data found in range." << endl;
-                    } else {
-                        for (auto const& p : res) {
-                            cout << " [" << p.first << "] -> " << p.second << endl;
-                        }
+                getline(cin, endKey);
+                auto res = db.getRange(startKey, endKey);
+                cout << "\n--- Scanned Entries ---" << endl;
+                if(res.empty()) {
+                    cout << "No data found in range." << endl;
+                } else {
+                    for(auto const& p : res) {
+                        cout << " [" << p.first << "] -> " << p.second << endl;
                     }
                 }
                 break;
+            }
 
-            case 4:
+            case 4: {
                 cout << "Key to Delete: "; 
-                getline(cin, k);
-                db.remove(k);
+                getline(cin, key);
+                db.remove(key);
                 cout << "Key removed from index." << endl;
                 break;
-
-            case 5:
+            }
+            case 5: {
                 cout << "Starting compaction..." << endl;
                 db.compact();
                 cout << "Optimized. Stale data removed." << endl;
                 break;
+            }
 
-            case 6:
+            case 6: {
                 cout << "Closing engine. Happy coding!" << endl;
                 return 0;
+            }
 
-            default:
+            default: {
                 cout << "Invalid choice." << endl;
+            }
         }
     }
     return 0;
