@@ -1,270 +1,227 @@
-#include <iostream>
-#include <fstream>
-#include <string>
-#include <map>
-#include <vector>
-#include <cstdio>
-#include <mutex>
-#include <limits> 
+#include<iostream>
+#include<fstream>
+#include<string>
+#include<map>
+#include<mutex>
+#include<limits>
+#include<cstdio>
 using namespace std;
 
 class LogStore {
 private:
     string filename;
-    fstream file;
-    map<string, long long> index;
-    mutex mtx;
+    map<string, long long> index; // Map any index with the file postion(long long)
+    mutex mtx; // To ensure only one thread write file at a time
 
-    unsigned int calculateChecksum(string k, string v) {
-        unsigned int sum = 0;
-        for(char c : k) {
-            sum += (unsigned char)c;
-        }
-        for(char c : v) {
-            sum += (unsigned char)c;
-        }
+    // Calculate checksum
+    int calculateChecksum(const string& key, const string& value) {
+        int sum = 0;
+        for(char c:key) sum += c;
+        for(char c:value) sum += c;
         return sum;
     }
 
-    string getValueAtOffset(long long pos) {
-        file.seekg(pos);
-        char status;
-        unsigned int checksum;
-        int kLen, vLen;
+    // This function will read data from file in O(logn) time
+    string readValueAt(long long pos) {
+        // opening file
+        ifstream file(filename, ios::binary);
 
-        file.read(&status, 1);
-        file.read((char*)&checksum, sizeof(checksum));
-        file.read((char*)&kLen, sizeof(kLen));
-        file.seekg(kLen, ios::cur); 
-        file.read((char*)&vLen, sizeof(vLen));
+        // jump file pointer to specified byte position
+        file.seekg(pos);
+
+        int savedCheckSum, kLen, vLen;
+        // reading header
+        if(!(file >> savedCheckSum >> kLen >> vLen)) return "CORRUPTED";
         
+        // skiping space between header and data
+        file.get();
+
+        // reading key
+        string key(kLen, ' ');
+        file.read(&key[0], kLen);
+
+        // if record if deleted
+        if(vLen == -1) return "NOT FOUND";
+
+        // reading value
         string value(vLen, ' ');
         file.read(&value[0], vLen);
-        return value;
-    }
 
-    void writeEntry(string k, string v, bool isDeleted) {
-        char status = isDeleted ? 0 : 1;
-        int kLen = k.length();
-        int vLen = v.length();
-        unsigned int checksum = calculateChecksum(k, v);
-
-        file.write(&status, 1);
-        file.write((char*)&checksum, sizeof(checksum));
-        file.write((char*)&kLen, sizeof(kLen));
-        file.write(k.c_str(), kLen);
-        file.write((char*)&vLen, sizeof(vLen));
-        file.write(v.c_str(), vLen);
-        file.flush();
-    }
-
-    void loadIndex() {
-        cout << "Loading database index, please wait..." << endl;
-        file.seekg(0, ios::beg);
-        int count = 0;
-        while(file.peek() != EOF) {
-            long long pos = file.tellg();
-            char status;
-            unsigned int savedChecksum;
-            int kLen, vLen;
-
-            if(!file.read(&status, 1)) break;
-            file.read((char*)&savedChecksum, sizeof(savedChecksum));
-            file.read((char*)&kLen, sizeof(kLen));
-            
-            string key(kLen, ' ');
-            file.read(&key[0], kLen);
-            
-            file.read((char*)&vLen, sizeof(vLen));
-            string value(vLen, ' ');
-            file.read(&value[0], vLen);
-
-            if(calculateChecksum(key, value) != savedChecksum) break;
-
-            if(status == 1) {
-                index[key] = pos;
-            } else {
-                index.erase(key);
-            }
-            count++;
-        }
-        file.clear(); 
-        cout << "Loaded " << count << " log entries successfully." << endl;
+        // matching checksum
+        if(calculateChecksum(key, value) == savedCheckSum) return value;
+        return "Data Altered"; // file is corrupted
     }
 
 public:
-    LogStore(string name) {
-        filename = name;
-        file.open(filename, ios::in | ios::out | ios::binary | ios::app);
-        if(!file.is_open()) {
-            ofstream create(filename, ios::binary);
-            create.close();
-            file.open(filename, ios::in | ios::out | ios::binary | ios::app);
-        }
+    LogStore(string filename) {
+        this->filename = filename;
         loadIndex();
     }
 
-    ~LogStore() {
-        if(file.is_open()) {
-            file.close();
+    void loadIndex() {
+        // opening file in read format
+        ifstream file(filename, ios::binary);
+        if(!file.is_open()) return; // if file not exist -> return
+
+        long long currentPos = 0;
+        
+        while(file.peek() != EOF) {
+            // Get the byte position of the current record
+            currentPos = file.tellg();
+            
+            int cs, kLen, vLen;
+            if (!(file >> cs >> kLen >> vLen)) break; // reading headers
+            
+            file.get(); // skiping space separator
+            // reading key
+            string key(kLen, ' ');
+            file.read(&key[0], kLen);
+
+            // updating index map
+            if(vLen == -1) {
+                index.erase(key);
+            } else {
+                index[key] = currentPos;
+                file.seekg(vLen, ios::cur);
+            }
+            
+            // Skip any newlines or carriage returns to get to the next record
+            while(file.peek() == '\n' || file.peek() == '\r') file.get();
         }
+        cout << "Index loaded. Keys in RAM: " << index.size() << endl;
     }
 
-    void set(string k, string v) {
+    // Write data or delete it
+    void set(string key, string value, bool isDelete = false) {
+        // Lock the database so nobody else can write right now
         lock_guard<mutex> lock(mtx);
+        
+        // opening file in "append" mode and moving write pointer to end of file
+        ofstream file(filename, ios::binary | ios::app);
         file.seekp(0, ios::end);
-        long long pos = file.tellp();
-        writeEntry(k, v, false);
-        index[k] = pos;
+        long long pos = file.tellp(); // finding byte position
+
+        int kLen = key.length();
+        // if deleting vLen is -1
+        int vLen = isDelete ? -1 : value.length();
+        // calculating checksum
+        int cs = isDelete ? calculateChecksum(key, "") : calculateChecksum(key, value);
+
+        // Write the data in our format
+        file << cs << " " << kLen << " " << vLen << " " << key;
+        // writing data if we are not deleting
+        if(!isDelete) file << value;
+        // newline to separate records
+        file << "\n";
+
+        // remove key if deleting else update value of key in map
+        if(isDelete) index.erase(key);
+        else index[key] = pos;
     }
 
-    string get(string k) {
-        lock_guard<mutex> lock(mtx);
-        if(index.find(k) == index.end()) {
-            return "NOT_FOUND";
+    // Retrieval
+    string get(string key) {
+        lock_guard<mutex> lock(mtx); // Lock for safety
+        if(index.find(key) == index.end()) return "NOT FOUND"; // key does not exist
+        return readValueAt(index[key]); // read value
+    }
+
+    // Delete logic
+    void remove(string key) {
+        // removing key if it exist
+        if(index.count(key)) {
+            set(key, "", true); 
         }
-        return getValueAtOffset(index[k]);
     }
 
-    vector<pair<string, string>> getRange(string start, string end) {
-        lock_guard<mutex> lock(mtx);
-        vector<pair<string, string>> results;
-        auto itStart = index.lower_bound(start);
-        auto itEnd = index.upper_bound(end);
-
-        for(auto it = itStart; it != itEnd; ++it) {
-            results.push_back({it->first, getValueAtOffset(it->second)});
-        }
-        return results;
-    }
-
-    void remove(string k) {
-        lock_guard<mutex> lock(mtx);
-        if(index.find(k) == index.end()) {
-            return;
-        }
-        file.seekp(0, ios::end);
-        writeEntry(k, "", true); 
-        index.erase(k);
-    }
-
+    // Cleaning the file - compact
     void compact() {
+        // stop all other actions during compaction
         lock_guard<mutex> lock(mtx);
-        string tempName = "temp_" + filename;
-        ofstream tempFile(tempName, ios::binary);
-        map<string, long long> newIndex;
+        // creating a new file and opening it in write mode
+        string temp = "temp_db.txt";
+        ofstream out(temp, ios::binary);
+        // new index map
+        map<string, long long> newIdx;
 
-        for(auto const& entry : index) {
-            string val = getValueAtOffset(entry.second);
-            long long newPos = tempFile.tellp();
-            
-            char status = 1;
-            int kLen = entry.first.length();
+        for(auto &[key, pos]:index) {
+            string val = readValueAt(pos);
+            // skiping corrupted data
+            if(val == "Data altered") continue;
+
+            // new byte position
+            long long newPos = out.tellp();
+            int kLen = key.length();
             int vLen = val.length();
-            unsigned int checksum = calculateChecksum(entry.first, val);
-            
-            tempFile.write(&status, 1);
-            tempFile.write((char*)&checksum, sizeof(checksum));
-            tempFile.write((char*)&kLen, sizeof(kLen));
-            tempFile.write(entry.first.c_str(), kLen);
-            tempFile.write((char*)&vLen, sizeof(vLen));
-            tempFile.write(val.c_str(), vLen);
-            
-            newIndex[entry.first] = newPos;
-        }
+            int cs = calculateChecksum(key, val);
 
-        tempFile.close();
-        file.close();
+            // write data to new file
+            out << cs << " " << kLen << " " << vLen << " " << key << val << "\n";
+            // updating index map
+            newIdx[key] = newPos;
+        }
+        // closing file
+        out.close();
+        // deleting old file and renaming new file to the database name
         std::remove(filename.c_str());
-        std::rename(tempName.c_str(), filename.c_str());
-        file.open(filename, ios::in | ios::out | ios::binary | ios::app);
-        index = newIndex;
+        std::rename(temp.c_str(), filename.c_str());
+        index = newIdx; // updating map
+        cout << "Database compacted" << endl;
     }
 };
 
+
+bool isInputOk(string s) {
+    return (s.length() == 1 && s[0] >= '1' && s[0] <= '5');
+}
 int main() {
-    LogStore db("engine.db");
-    int choice;
-    string key, value, startKey, endKey;
+    LogStore db("database.txt");
+    string input, key, value;
 
     while(true) {
-        cout << "\n===============================" << endl;
-        cout << "   LogStore Engine Interface" << endl;
-        cout << "===============================" << endl;
-        cout << "1. SET (Add/Update)" << endl;
-        cout << "2. GET (Find Key)" << endl;
-        cout << "3. RANGE SEARCH (Lexical order)" << endl;
-        cout << "4. DELETE (Remove Key)" << endl;
-        cout << "5. COMPACT (Log Cleaning)" << endl;
-        cout << "6. EXIT" << endl;
-        cout << "-------------------------------" << endl;
-        cout << "Selection: ";
-        
-        if(!(cin >> choice)) {
+        cout << "\n--- LOGSTORE ENGINE ---\n1. SET  2. GET  3. DELETE  4. COMPACT  5. EXIT\nSelection: ";
+        cin >> input;
+
+        if(!isInputOk(input)) {
+            cout << "Invalid input! Please enter value between 1 and 5" << endl;
             cin.clear();
             cin.ignore(numeric_limits<streamsize>::max(), '\n');
-            cout << "Invalid input. Numbers only please." << endl;
             continue;
         }
-        
-        cin.ignore(numeric_limits<streamsize>::max(), '\n');
+
+        int choice = input[0] - '0';
+        cin.ignore(numeric_limits<streamsize>::max(), '\n'); // clearing input buffer
 
         switch(choice) {
             case 1: {
-                cout << "Key: "; 
+                cout << "Key: ";
                 getline(cin, key);
-                cout << "Value: "; 
+                cout << "Value: ";
                 getline(cin, value);
                 db.set(key, value);
-                cout << "Success." << endl;
+                cout << "Record added to database" << endl;
                 break;
             }
-
             case 2: {
-                cout << "Search Key: "; 
+                cout << "Key: ";
                 getline(cin, key);
                 cout << "Result: " << db.get(key) << endl;
                 break;
             }
-
             case 3: {
-                cout << "Start Key: "; 
-                getline(cin, startKey);
-                cout << "End Key: "; 
-                getline(cin, endKey);
-                auto res = db.getRange(startKey, endKey);
-                cout << "\n--- Scanned Entries ---" << endl;
-                if(res.empty()) {
-                    cout << "No data found in range." << endl;
-                } else {
-                    for(auto const& p : res) {
-                        cout << " [" << p.first << "] -> " << p.second << endl;
-                    }
-                }
-                break;
-            }
-
-            case 4: {
-                cout << "Key to Delete: "; 
+                cout << "Key to Delete: ";
                 getline(cin, key);
                 db.remove(key);
-                cout << "Key removed from index." << endl;
+                cout << "Key deleted" << endl;
+                break;
+            }
+            case 4: {
+                db.compact();
                 break;
             }
             case 5: {
-                cout << "Starting compaction..." << endl;
-                db.compact();
-                cout << "Optimized. Stale data removed." << endl;
-                break;
-            }
-
-            case 6: {
-                cout << "Closing engine. Happy coding!" << endl;
+                cout << "Thank You!" << endl;
                 return 0;
-            }
-
-            default: {
-                cout << "Invalid choice." << endl;
             }
         }
     }
