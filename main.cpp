@@ -31,7 +31,7 @@ private:
 
         int savedCheckSum, kLen, vLen;
         // reading header
-        if(!(file >> savedCheckSum >> kLen >> vLen)) return "CORRUPTED";
+        if(!(file >> savedCheckSum >> kLen >> vLen)) return "Data Altered";
         
         // skiping space between header and data
         file.get();
@@ -147,7 +147,7 @@ public:
         for(auto &[key, pos]:index) {
             string val = readValueAt(pos);
             // skiping corrupted data
-            if(val == "Data altered") continue;
+            if(val == "Data Altered") continue;
 
             // new byte position
             long long newPos = out.tellp();
